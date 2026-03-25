@@ -1,0 +1,45 @@
+# SharedMem example configuration
+# Copy this file to config.yaml (or config.local.yaml) and adapt the paths.
+
+data_dir: data
+watch: true
+debounce_seconds: 2.0
+chunk_max_chars: 2000
+
+sources:
+  notes:
+    path: ~/Documents/notes
+    patterns:
+      - "**/*.md"
+    exclude:
+      - ".obsidian/"
+      - ".trash/"
+    type: vault
+
+  agent_memory:
+    path: ~/.claude/projects
+    patterns:
+      - "**/memory/**/*.md"
+      - "**/MEMORY.md"
+    type: agent_memory
+
+  skills:
+    path: ~/.claude/skills
+    patterns:
+      - "**/*.md"
+      - "**/*.yaml"
+      - "**/*.yml"
+    type: skill
+
+  repo_docs:
+    path: ~/GitHub
+    patterns:
+      - "*/CLAUDE.md"
+      - "*/AGENTS.md"
+      - "CLAUDE.md"
+      - "AGENTS.md"
+    exclude:
+      - ".git/"
+      - "node_modules/"
+      - ".venv/"
+    type: project_config
