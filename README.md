@@ -1,17 +1,24 @@
 # SharedMem
 
-Local MCP server that gives your AI agents a shared semantic memory. It indexes local knowledge sources into a persistent vector store so MCP-compatible clients can search and reuse context across sessions.
+Local MCP server that gives AI agents a shared semantic memory. It indexes local knowledge sources into a persistent store so MCP-compatible clients can search and reuse context across sessions.
 
 ## What it does
 
-SharedMem indexes your local knowledge sources — Obsidian vaults, agent memories, skills, project configs — into a single ChromaDB vector store. Any MCP-compatible agent can then search across everything with natural language queries.
+SharedMem indexes local knowledge sources — notes, agent memories, skills, project configs — into a single searchable store. Any MCP-compatible agent can then search across everything with natural language queries.
+
+The MemMesh 2.0 surface adds budget-aware retrieval on top of that index. Agents
+should ask for a compact `memory_brief` first, escalate to `memory_pack` only
+when they need broader context, and use `memory_entity` when they already know
+the repo, host, agent, workflow, or other persistent object they are working on.
+After dense work, agents can store a compact `turn_summary` and selectively
+promote only durable facts with `promote_memory`.
 
 ```
 ┌──────────────┐        ┌──────────────┐
-│  Claude Code │        │  Codex CLI   │
-│  (Anthropic) │        │  (OpenAI)    │
+│  MCP Client  │        │  MCP Client  │
+│      A       │        │      B       │
 └──────┬───────┘        └──────┬───────┘
-       │  MCP stdio            │  MCP stdio
+       │  stdio MCP            │  stdio MCP
        └──────────┬────────────┘
                   ▼
    ┌────────────────────────────┐
@@ -27,6 +34,13 @@ SharedMem indexes your local knowledge sources — Obsidian vaults, agent memori
 
 | Tool | Description |
 |------|-------------|
+| `memory_brief(query, budget, scope_project, scope_agent, entity)` | Compact, budget-aware retrieval for default context use |
+| `memory_pack(query, scope_project, scope_agent, entity, top_k)` | Wider context pack with summaries, facts, entities, citations, and excerpts |
+| `memory_entity(entity_id, scope_project, scope_agent, top_k)` | Consolidated view of one known entity |
+| `decision_record(summary, facts, entity_refs, ...)` | Store a durable decision as structured memory |
+| `entity_update(entity_id, summary, facts, ...)` | Store a durable update about a persistent entity |
+| `turn_summary(objective, actions, result, ...)` | Compact a dense interaction into operational memory |
+| `promote_memory(memory_id, kind, summary, ...)` | Promote a retrieved memory into a durable structured memory |
 | `recall(query, top_k, source, doc_type)` | Semantic search across all indexed sources |
 | `remember(content, tags, source, doc_type)` | Store a new memory manually |
 | `list_sources()` | Show indexed sources and document counts |
@@ -39,11 +53,10 @@ Configured in `config.yaml` or `config.local.yaml`. Example setup:
 
 | Source | Path | Type | What |
 |--------|------|------|------|
-| `claude_memory` | `~/.claude/projects/` | agent_memory | Claude Code project memories |
-| `claude_agent_memory` | `~/.claude/agent-memory/` | agent_memory | Claude Code agent memories |
-| `claude_skills` | `~/.claude/skills/` | skill | Claude Code skill definitions |
-| `notes` | `~/Documents/notes/` | vault | Markdown notes or an Obsidian vault |
-| `repo_docs` | `~/GitHub/` | project_config | `CLAUDE.md` and `AGENTS.md` files |
+| `notes` | `/path/to/notes/` | notes | Markdown notes |
+| `agent_memory` | `/path/to/agent-memory/` | agent_memory | Agent memory files |
+| `skills` | `/path/to/skills/` | skill | Skill or workflow definitions |
+| `repo_docs` | `/path/to/repos/` | project_config | Project instruction files |
 
 ## Setup
 
@@ -55,7 +68,7 @@ Configured in `config.yaml` or `config.local.yaml`. Example setup:
 ### Install
 
 ```bash
-cd /path/to/sharedmem
+cd /path/to/memmesh
 uv sync
 cp config.example.yaml config.yaml
 ```
@@ -69,47 +82,71 @@ The server resolves configuration in this order:
 3. `config.yaml`
 4. `config.example.yaml`
 
-### Configure Claude Code
+### Configure MCP Clients
 
-File: `~/.claude/.mcp.json`
+Use this shape for MCP clients that read JSON configuration:
 
 ```json
 {
   "mcpServers": {
     "sharedmem": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/sharedmem", "python", "-m", "sharedmem"],
+      "args": ["run", "--directory", "/path/to/memmesh", "python", "-m", "sharedmem.server"],
+      "cwd": "/path/to/memmesh",
       "env": {}
     }
   }
 }
 ```
 
-### Configure Codex CLI
-
-Add to `~/.codex/config.toml`:
+For MCP clients that read TOML configuration:
 
 ```toml
 [mcp_servers.sharedmem]
 command = "uv"
-args = ["run", "python", "-m", "sharedmem"]
-cwd = "/path/to/sharedmem"
+args = ["run", "--directory", "/path/to/memmesh", "python", "-m", "sharedmem.server"]
+cwd = "/path/to/memmesh"
 startup_timeout_sec = 30
 tool_timeout_sec = 60
 enabled = true
+env = {}
 ```
 
-Or via CLI:
+Some clients also support CLI registration. Use the equivalent command for
+your client:
 
 ```bash
-codex mcp add sharedmem -- uv run --directory /path/to/sharedmem python -m sharedmem
+mcp-client add sharedmem -- uv run --directory /path/to/memmesh python -m sharedmem.server
 ```
+
+For clients that use an array-style local command:
+
+```json
+{
+  "mcp": {
+    "sharedmem": {
+      "type": "local",
+      "command": ["uv", "run", "--directory", "/path/to/memmesh", "python", "-m", "sharedmem.server"],
+      "environment": {},
+      "enabled": true,
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Set `SHAREDMEM_BACKEND=simple` when you want the lightweight lexical backend
+instead of ChromaDB, for example in constrained or sandboxed runtimes.
 
 ## Security and privacy
 
 SharedMem is intended for local use with trusted MCP clients. It can return indexed file contents and absolute local file paths in tool results such as `recall()` and `list_sources()`.
 
 Do not connect untrusted agents or remote clients to a SharedMem instance that indexes personal notes, credentials, or sensitive work documents.
+
+Keep local runtime files out of version control. `config.yaml`,
+`config.local.yaml`, `.env*`, `data/`, and `data_runtime/` are intentionally
+gitignored because they may contain private paths, indexed text, or local state.
 
 ## Usage
 
@@ -129,6 +166,97 @@ recall("project setup instructions", doc_type="project_config")
 remember("Decision: keep weekly planning notes in the team vault", tags=["decision", "knowledge-base"])
 ```
 
+### Get a compact memory brief
+
+```
+memory_brief("what do we know about the agent gateway", entity="agent-gateway")
+memory_brief("decisions about project-alpha", budget="medium", scope_project="project-alpha")
+```
+
+Use this as the default retrieval call. It returns short answer bullets and
+citations instead of dragging full chunks into context.
+
+### Escalate to a context pack
+
+```
+memory_pack("architecture and deployment notes", scope_project="project-alpha", top_k=6)
+```
+
+Use a pack only when the brief is not enough. It includes compact excerpts plus
+structured metadata.
+
+### Open an entity profile
+
+```
+memory_entity("agent-gateway")
+memory_entity("project-alpha", top_k=8)
+```
+
+This is useful when the agent already knows the object it is working on and
+does not need a broad thematic search.
+
+### Store a structured decision
+
+```
+decision_record(
+  "Use the private network for remote access to the agent gateway",
+  facts=["The gateway should not bind to a public interface", "Remote access uses a private network"],
+  entity_refs=["agent-gateway"],
+  scope_project="project-alpha",
+  dedupe_key="agent_gateway_remote_access_policy"
+)
+```
+
+When `dedupe_key` matches an existing active memory and the content differs,
+SharedMem returns `conflict_detected` and writes a `memory_conflict` record
+instead of silently overwriting the existing decision. Use
+`conflict_policy="replace"` only when the new decision intentionally supersedes
+the old one.
+
+### Store an entity update
+
+```
+entity_update(
+  "project-alpha",
+  "Project Alpha now uses the shared deployment workflow",
+  facts=["Deployment steps are tracked as structured memory"],
+  scope_project="project-alpha"
+)
+```
+
+### Compact a dense turn
+
+```
+turn_summary(
+  "Implement budget-aware memory retrieval",
+  actions=["added memory_brief", "added memory_pack"],
+  result="agents can request compact memory context",
+  artifacts=["src/sharedmem/server.py", "src/sharedmem/memory.py"],
+  decisions=["Agents should call memory_brief before memory_pack"],
+  open_questions=["whether automatic preflight context is needed"],
+  next_step="observe real agent usage",
+  entity_refs=["sharedmem"],
+  scope_project="sharedmem"
+)
+```
+
+### Promote selectively
+
+```
+promote_memory(
+  "c916a14cd2e2c6c4",
+  "decision_record",
+  summary="Agents should call memory_brief before memory_pack",
+  facts=["memory_brief returns short bullets and citations"],
+  entity_refs=["sharedmem"],
+  scope_project="sharedmem",
+  dedupe_key="default_retrieval_policy"
+)
+```
+
+Allowed promotion kinds are `decision_record`, `entity_update`,
+`preference_signal`, and `derived_artifact`.
+
 ### Check what's indexed
 
 ```
@@ -146,8 +274,9 @@ reindex("notes")             # specific source
 
 ```
 src/sharedmem/
-├── server.py    # MCP server (FastMCP, 5 tools, stdio transport)
-├── store.py     # ChromaDB persistent wrapper (add/query/delete)
+├── server.py    # MCP server (FastMCP tools, stdio transport)
+├── memory.py    # MemMesh 2.0 helpers for structured memory + budget retrieval
+├── store.py     # ChromaDB/simple persistent wrapper (add/query/delete)
 ├── indexer.py   # File scanner, markdown chunking, batch indexer
 ├── watcher.py   # Watchdog file watcher with debouncing
 ├── config.py    # YAML configuration loader
@@ -167,7 +296,7 @@ Copy `config.example.yaml` to `config.yaml` and edit it to add or modify sources
 ```yaml
 sources:
   my_new_source:
-    path: ~/path/to/directory
+    path: /path/to/directory
     patterns:
       - "**/*.md"
       - "**/*.yaml"

@@ -1,4 +1,11 @@
 data/
+data_runtime/
+*.sqlite
+*.sqlite3
+*.db
+*.pkl
+*.pickle
+*.log
 __pycache__/
 *.py[cod]
 *.pyo
@@ -21,6 +28,10 @@ config.yaml
 config.local.yaml
 .env
 .env.*
+*.pem
+*.key
+*.p12
+*.pfx
 .claude/
 
 .DS_Store

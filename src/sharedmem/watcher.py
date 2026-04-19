@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -103,6 +104,9 @@ class _DebouncedHandler(FileSystemEventHandler):
 def start_watcher(store: MemoryStore, settings: Settings) -> Observer | None:
     """Start watching all configured source directories. Returns the Observer."""
     if not settings.watch or not settings.sources:
+        return None
+    if os.environ.get("CODEX_SANDBOX"):
+        logger.info("Watcher disabled in sandboxed runtime")
         return None
 
     observer = Observer()

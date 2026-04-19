@@ -8,23 +8,22 @@ chunk_max_chars: 2000
 
 sources:
   notes:
-    path: ~/Documents/notes
+    path: /path/to/notes
     patterns:
       - "**/*.md"
     exclude:
-      - ".obsidian/"
       - ".trash/"
-    type: vault
+    type: notes
 
   agent_memory:
-    path: ~/.claude/projects
+    path: /path/to/agent-memory
     patterns:
       - "**/memory/**/*.md"
       - "**/MEMORY.md"
     type: agent_memory
 
   skills:
-    path: ~/.claude/skills
+    path: /path/to/skills
     patterns:
       - "**/*.md"
       - "**/*.yaml"
@@ -32,12 +31,14 @@ sources:
     type: skill
 
   repo_docs:
-    path: ~/GitHub
+    path: /path/to/repos
     patterns:
       - "*/CLAUDE.md"
       - "*/AGENTS.md"
+      - "*/README.md"
       - "CLAUDE.md"
       - "AGENTS.md"
+      - "README.md"
     exclude:
       - ".git/"
       - "node_modules/"
