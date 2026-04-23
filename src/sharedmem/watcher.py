@@ -13,7 +13,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import Settings, SourceConfig
-from .indexer import index_file
+from .indexer import _is_safe_source_file, index_file
 from .store import MemoryStore
 
 logger = logging.getLogger("sharedmem.watcher")
@@ -68,7 +68,7 @@ class _DebouncedHandler(FileSystemEventHandler):
 
         for file_path in paths:
             p = Path(file_path)
-            if p.exists():
+            if _is_safe_source_file(p, self._source.resolved_path):
                 n = index_file(
                     self._store, p,
                     self._source.name,
@@ -77,7 +77,7 @@ class _DebouncedHandler(FileSystemEventHandler):
                 )
                 logger.info("Re-indexed %s (%d chunks)", p.name, n)
             else:
-                # File was deleted
+                # File was deleted or is not a safe source file
                 self._store.delete_by_path(file_path)
                 logger.info("Removed deleted file from index: %s", p.name)
 
