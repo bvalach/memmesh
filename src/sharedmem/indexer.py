@@ -24,6 +24,16 @@ def _should_exclude(path: Path, excludes: list[str]) -> bool:
     return False
 
 
+def _is_safe_source_file(path: Path, root: Path) -> bool:
+    """Allow only non-symlink files that resolve under the source root."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
 def _chunk_by_headers(content: str, max_chars: int) -> list[str]:
     """Split markdown content by ## headers if too long."""
     if len(content) <= max_chars:
@@ -65,7 +75,7 @@ def scan_source(source: SourceConfig) -> list[Path]:
     files = []
     for pattern in source.patterns:
         for path in root.glob(pattern):
-            if path.is_file() and not _should_exclude(path, source.exclude):
+            if _is_safe_source_file(path, root) and not _should_exclude(path, source.exclude):
                 files.append(path)
 
     return sorted(set(files))
